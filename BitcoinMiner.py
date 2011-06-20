@@ -8,6 +8,7 @@ import pyopencl as cl
 from sha256 import *
 from hashlib import md5
 from base64 import b64encode
+from decimal import Decimal
 from time import sleep, time
 from json import dumps, loads
 from datetime import datetime
@@ -112,6 +113,9 @@ class BitcoinMiner():
 		self.lastWork = 0
 		self.lastBlock = self.updateTime = self.longPollURL = ''
 
+		self.shareCount = [0, 0]
+		self.getworkCount = 0
+
 		self.workQueue = Queue()
 		self.resultQueue = Queue()
 
@@ -147,8 +151,7 @@ class BitcoinMiner():
 			if self.verbose:
 				print '%s,' % datetime.now().strftime(TIME_FORMAT), p
 			else:
-				pool = self.pool[2]+' ' if self.pool else ''
-				sys.stdout.write('\r%s\r%s%s' % (" "*len(p), pool, p))
+				sys.stdout.write('\r%s\r%s' % (' ' * 79, format % args))
 			sys.stdout.flush()
 
 	def sayLine(self, format, args=()):
@@ -159,8 +162,15 @@ class BitcoinMiner():
 	def exit(self):
 		self.stop = True
 
-	def hashrate(self, rate):
-		self.say('%s khash/s', rate)
+	def sayStatus(self, rate, estRate):
+		rate = Decimal(rate) / 1000
+		estRate = Decimal(estRate) / 1000
+		totShares = self.shareCount[1] + self.shareCount[0]
+		totSharesE = max(totShares, totShares, 1)
+		eff = 0
+		if (self.getworkCount):
+			eff = self.shareCount[1] * 100 / self.getworkCount
+		self.say('[%.03f MH/s (~%d MH/s)] [Rej: %d/%d (%d%%)] [GW: %d (Eff: %d%%)]', (rate, round(estRate), self.shareCount[0], totShares, self.shareCount[0] * 100 / totSharesE, self.getworkCount, eff))
 
 	def failure(self, message):
 		print '\n%s' % message
@@ -187,13 +197,20 @@ class BitcoinMiner():
 					update = self.update = (self.update or time() - self.lastWork > if_else(self.longPollActive, LONG_POLL_MAX_ASKRATE, self.askrate))
 				if update:
 					work = self.getwork()
-					with self.lock:
-						if self.update:
-							self.queueWork(work)
+					if self.update:
+						self.queueWork(work)
 
-				with self.lock:
-					if not self.resultQueue.empty():
-						self.sendResult(self.resultQueue.get(False))
+				retry = []
+				while not self.resultQueue.empty():
+					result = self.resultQueue.get(False)
+					with self.lock:
+						rv = self.sendResult(result)
+					if rv is False:
+						retry.append(result)
+				if retry:
+					for result in retry:
+						self.resultQueue.put(result)
+
 				sleep(1)
 			except Exception:
 				self.sayLine("Unexpected error:")
@@ -220,9 +237,14 @@ class BitcoinMiner():
 					if belowOrEquals(h[:7], result['target'][:7]):
 						d = result['work']['data']
 						d = ''.join([d[:136], pack('I', long(result['data'][1])).encode('hex'), d[144:152], pack('I', long(result['output'][i])).encode('hex'), d[160:]])
+						hashid = pack('I', long(h[6])).encode('hex')
 						accepted = self.getwork(d)
 						if accepted != None:
-							self.blockFound(pack('I', long(h[6])).encode('hex'), accepted)
+							self.blockFound(hashid, accepted)
+							self.shareCount[if_else(accepted, 1, 0)] += 1
+						else:
+							self.sayLine('%s, %s', (hashid, 'ERROR (will resend)'))
+							return False
 
 	def getwork(self, data=None):
 		save_pool = None
@@ -236,6 +258,8 @@ class BitcoinMiner():
 				self.failback_getwork_count += 1
 			if not self.connection:
 				self.connection = httplib.HTTPConnection(self.host, strict=True, timeout=TIMEOUT)
+			if data is None:
+				self.getworkCount += 1
 			self.postdata['params'] = if_else(data, [data], [])
 			(self.connection, result) = self.request(self.connection, '/', self.headers, dumps(self.postdata))
 			self.errors = 0
@@ -344,11 +368,13 @@ class BitcoinMiner():
 		
 		queue = cl.CommandQueue(self.context)
 
-		lastRatedPace = lastRated = lastNTime = time()
-		base = lastHashRate = threadsRunPace = threadsRun = 0
+		startTime = lastRatedPace = lastRated = lastNTime = time()
+		accepted = base = lastHashRate = threadsRunPace = threadsRun = 0
+		acceptHist = []
 		f = np.zeros(8, np.uint32)
 		output = np.zeros(OUTPUT_SIZE+1, np.uint32)
 		output_buf = cl.Buffer(self.context, cl.mem_flags.WRITE_ONLY | cl.mem_flags.USE_HOST_PTR, hostbuf=output)
+		timedelta = 900
 
 		work = None
 		while True:
@@ -392,7 +418,20 @@ class BitcoinMiner():
 					lastHashRate = rate
 			t = now - lastRated
 			if (t > self.rate):
-				self.hashrate(int((threadsRun / t) / self.rateDivisor))
+				rate = int((threadsRun / t) / self.rateDivisor)
+
+				if (len(acceptHist)):
+					LAH = acceptHist.pop()
+					if LAH[1] != self.shareCount[1]:
+						acceptHist.append(LAH)
+				acceptHist.append( (now, self.shareCount[1]) )
+				while (acceptHist[0][0] < now - timedelta):
+					acceptHist.pop(0)
+				newAccept = self.shareCount[1] - acceptHist[0][1]
+				# FIXME: this next line assumes diff 1: calculate by real target
+				estRate = Decimal(newAccept) * (2**32) / min(int(now - startTime), timedelta) / 1000
+
+				self.sayStatus(rate, estRate)
 				lastRated = now; threadsRun = 0
 
 			queue.finish()
