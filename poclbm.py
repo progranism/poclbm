@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python -OO
 
 import pyopencl as cl
 from time import sleep
@@ -6,8 +6,9 @@ from BitcoinMiner import *
 from optparse import OptionParser
 
 parser = OptionParser(version=USER_AGENT)
+parser.add_option('-P', '--phatk',    dest='phatk',    action='store_true', help='use phatk')
 parser.add_option('-u', '--user',     dest='user',     default='bitcoin',   help='user name')
-parser.add_option('--pass',	          dest='password', default='password',  help='password')
+parser.add_option('--pass',           dest='password', default='password',  help='password')
 parser.add_option('-o', '--host',     dest='host',     default='127.0.0.1', help='RPC host (without \'http://\')')
 parser.add_option('-p', '--port',     dest='port',     default='8332',      help='RPC port', type='int')
 parser.add_option('-r', '--rate',     dest='rate',     default=1,           help='hash rate display interval in seconds, default=1', type='float')
@@ -56,6 +57,7 @@ try:
 							options.host,
 							options.user,
 							options.password,
+							options.phatk,
 							options.port,
 							options.frames,
 							options.rate,
@@ -69,4 +71,3 @@ except KeyboardInterrupt:
 	print '\nbye'
 finally:
 	if miner: miner.exit()
-sleep(1.1)
