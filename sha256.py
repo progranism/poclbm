@@ -1,3 +1,4 @@
+from util import *
 import numpy as np
 
 K = np.array(	[0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -10,12 +11,6 @@ K = np.array(	[0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f
 				0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2], np.uint32)
 
 STATE = np.array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19], np.uint32)
-
-def uint32(x):
-	return x & 0xffffffffL
-
-def bytereverse(x):
-	return uint32(( ((x) << 24) | (((x) << 8) & 0x00ff0000) | (((x) >> 8) & 0x0000ff00) | ((x) >> 24) ))
 
 def rotr(x, y):
 	return (x>>y | x<<(32-y))
@@ -31,8 +26,10 @@ def sharound(a,b,c,d,e,f,g,h,x,K):
 	t2=(rot(a, 30)^rot(a, 19)^rot(a, 10))+((a&b)|(c&(a|b)))
 	return (uint32(d + t1), uint32(t1+t2))
 
-def partial(state, data, f):
+def partial(state, merkle_end, time, difficulty, f):
 	state2 = np.array(state)
+	data = [merkle_end, time, difficulty]
+
 	for i in xrange(3):
 		(state2[~(i-4)&7], state2[~(i-8)&7]) = sharound(state2[(~(i-1)&7)],state2[~(i-2)&7],state2[~(i-3)&7],state2[~(i-4)&7],state2[~(i-5)&7],state2[~(i-6)&7],state2[~(i-7)&7],state2[~(i-8)&7],data[i],K[i])
 
@@ -44,29 +41,48 @@ def partial(state, data, f):
 	f[5] = uint32(f[0] + (rotr(f[1], 7) ^ rotr(f[1], 18) ^ (f[1] >> 3)))
 	f[6] = uint32(state[4] + (rotr(state2[1], 6) ^ rotr(state2[1], 11) ^ rotr(state2[1], 25)) + (state2[3] ^ (state2[1] & (state2[2] ^ state2[3]))) + 0xe9b5dba5)
 	f[7] = uint32((rotr(state2[5], 2) ^ rotr(state2[5], 13) ^ rotr(state2[5], 22)) + ((state2[5] & state2[6]) | (state2[7] & (state2[5] | state2[6]))))
+
 	return state2
 
-def calculateF(state, data, f, state2):
-        rot = lambda x,y: x>>y | x<<(32-y)
-        #W2
-        f[0] = np.uint32(data[2])
+def calculateF(state, merkle_end, time, difficulty, f, state2):
+	data = [merkle_end, time, difficulty]
+	rot = lambda x,y: x>>y | x<<(32-y)
 
-        #W16
-        f[1] = np.uint32(data[0] + (rot(data[1], 7) ^ rot(data[1], 18) ^
-            (data[1] >> 3)))
-        #W17
-        f[2] = np.uint32(data[1] + (rot(data[2], 7) ^ rot(data[2], 18) ^
-            (data[2] >> 3)) + 0x01100000)
+	# W16
+	f[1] = np.uint32(data[0] + (rot(data[1], 7) ^ rot(data[1], 18) ^ (data[1] >> 3)))
 
-        #2 parts of the first SHA round
-        f[3] = np.uint32(state[4] + (rot(state2[1], 6) ^
-            rot(state2[1], 11) ^ rot(state2[1], 25)) +
-            (state2[3] ^ (state2[1] & (state2[2] ^
-            state2[3]))) + 0xe9b5dba5)
-        f[4] = np.uint32((rot(state2[5], 2) ^
-            rot(state2[5], 13) ^ rot(state2[5], 22)) +
-            ((state2[5] & state2[6]) | (state2[7] &
-            (state2[5] | state2[6]))))
+	# W17
+	f[2] = np.uint32(data[1] + (rot(data[2], 7) ^ rot(data[2], 18) ^ (data[2] >> 3)) + 0x01100000)
+
+	# W2 == old W2 + P1() with W16
+	f[0] = np.uint32(data[2] + (
+		rot(f[1], 32-13) ^
+		rot(f[1], 32-15) ^
+		(f[1] >> 10)
+		))
+
+	# W17_2 == P2(19) + P1() with W17
+	f[5] = np.uint32(0x11002000+(
+		rot(f[2], 32-13) ^ 
+		rot(f[2], 32-15) ^ 
+		(f[2] >> 10)
+		))
+
+	#2 parts of the first SHA round
+	# T1
+	f[4] = np.uint32((rot(state2[5], 2) ^
+		rot(state2[5], 13) ^ rot(state2[5], 22)) +
+		((state2[5] & state2[6]) | (state2[7] &
+			(state2[5] | state2[6]))))
+
+	# Preval4
+	f[3] = np.uint32(state[4] + (rot(state2[1], 6) ^
+		rot(state2[1], 11) ^ rot(state2[1], 25)) +
+		(state2[3] ^ (state2[1] & (state2[2] ^
+			state2[3]))) + 0xe9b5dba5)
+
+	state2[3] = np.uint32(state2[3] + 0xb956c25b)
+
 
 def sha256(state, data):
 	digest = np.copy(state)

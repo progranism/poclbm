@@ -1,0 +1,7 @@
+*.elf
+*.pyc
+*~
+*.swp
+graveyard
+pyopencl
+*.dll
