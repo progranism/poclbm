@@ -93,7 +93,7 @@ class BitcoinMiner():
 				self.miner.search(queue, (global_threads,), (self.options.worksize,),
 						state[0], state[1], state[2], state[3], state[4], state[5], state[6], state[7],
 						state2[1], state2[2], state2[3], state2[5], state2[6], state2[7],
-						pack('LL', base, (base + 1)),
+						pack('II', base, (base + 1)),
 						f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8],
 						output_buffer)
 			else:
