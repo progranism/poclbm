@@ -15,13 +15,14 @@ class NotAuthorized(Exception): pass
 class RPCError(Exception): pass
 
 class HttpTransport(Transport):
-	def __init__(self, miner):
+	def __init__(self, miner, phatk2):
 		self.connection = self.lp_connection = None
 		super(HttpTransport, self).__init__(miner)
 		self.timeout = 5
 		self.long_poll_timeout = 3600
 		self.long_poll_max_askrate = 60 - self.timeout
 		self.max_redirects = 3
+		self.phatk2 = phatk2
 
 		self.postdata = {'method': 'getwork', 'id': 'json'}
 
@@ -210,10 +211,13 @@ class HttpTransport(Transport):
 			job.time       = np.uint32(unpack('I', binary_data[68:72])[0])
 			job.difficulty = np.uint32(unpack('I', binary_data[72:76])[0])
 			job.state      = sha256(STATE, data0)
-			job.f          = np.zeros(8, np.uint32)
+			job.f          = np.zeros(9, np.uint32)
 			job.state2     = partial(job.state, job.merkle_end, job.time, job.difficulty, job.f)
 			job.targetQ    = 2**256 / int(''.join(list(chunks(work['target'], 2))[::-1]), 16)
 
-			calculateF(job.state, job.merkle_end, job.time, job.difficulty, job.f, job.state2)
+			if self.phatk2:
+				calculateF2(job.state, job.merkle_end, job.time, job.difficulty, job.f, job.state2)
+			else:
+				calculateF(job.state, job.merkle_end, job.time, job.difficulty, job.f, job.state2)
 
 			return job

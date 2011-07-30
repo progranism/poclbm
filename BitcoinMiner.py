@@ -30,7 +30,7 @@ class BitcoinMiner():
 		self.update_time = False
 		self.share_count = [0, 0]
 		self.work_queue = Queue()
-		self.transport = transport(self)
+		self.transport = transport(self, self.options.phatk2)
 		log.verbose = self.options.verbose
 		log.quiet = self.options.quiet
 
@@ -89,7 +89,15 @@ class BitcoinMiner():
 					state2 = work.state2
 					f = work.f
 
-			self.miner.search(queue, (global_threads,), (self.options.worksize,),
+			if self.options.phatk2:
+				self.miner.search(queue, (global_threads,), (self.options.worksize,),
+						state[0], state[1], state[2], state[3], state[4], state[5], state[6], state[7],
+						state2[1], state2[2], state2[3], state2[5], state2[6], state2[7],
+						pack('LL', base, (base + 1)),
+						f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8],
+						output_buffer)
+			else:
+				self.miner.search(queue, (global_threads,), (self.options.worksize,),
 						state[0], state[1], state[2], state[3], state[4], state[5], state[6], state[7],
 						state2[1], state2[2], np.uint32(state2[2] + 0x59f111f1), state2[3], state2[5], state2[6], state2[7],
 						pack('I', base),
@@ -101,7 +109,14 @@ class BitcoinMiner():
 			nonces_left -= global_threads
 			threads_run_pace += global_threads
 			threads_run += global_threads
-			base = uint32(base + global_threads)
+
+			if self.options.phatk2:
+				if self.options.vectors:
+					base = uint32(base + global_threads * 2)
+				else:
+					base = uint32(base + global_threads)
+			else:
+				base = uint32(base + global_threads)
 
 			now = time()
 			t = now - last_rated_pace
@@ -162,9 +177,18 @@ class BitcoinMiner():
 		if (self.device.extensions.find('cl_amd_media_ops') != -1):
 			self.defines += ' -DBITALIGN'
 			self.defines += ' -DBFI_INT'
+
+		if self.options.phatk2:
+			self.defines += ' -DWORKSIZE=' + str(self.options.worksize)
+			say_line('Kernel: phatk2')
+		else:
 			say_line('Kernel: phatk')
 
-		kernel_file = open('phatk.cl', 'r')
+		kernel_file = None
+		if self.options.phatk2:
+			kernel_file = open('phatk2.cl', 'r')
+		else:
+			kernel_file = open('phatk.cl', 'r')
 		kernel = kernel_file.read()
 		kernel_file.close()
 		m = md5(); m.update(''.join([self.device.platform.name, self.device.platform.version, self.device.name, self.defines, kernel]))

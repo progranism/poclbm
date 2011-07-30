@@ -33,14 +33,14 @@ def partial(state, merkle_end, time, difficulty, f):
 	for i in xrange(3):
 		(state2[~(i-4)&7], state2[~(i-8)&7]) = sharound(state2[(~(i-1)&7)],state2[~(i-2)&7],state2[~(i-3)&7],state2[~(i-4)&7],state2[~(i-5)&7],state2[~(i-6)&7],state2[~(i-7)&7],state2[~(i-8)&7],data[i],K[i])
 
-	f[0] = uint32(data[0] + (rotr(data[1], 7) ^ rotr(data[1], 18) ^ (data[1] >> 3)))
-	f[1] = uint32(data[1] + (rotr(data[2], 7) ^ rotr(data[2], 18) ^ (data[2] >> 3)) + 0x01100000)
-	f[2] = uint32(data[2] + (rotr(f[0], 17) ^ rotr(f[0], 19) ^ (f[0] >> 10)))
-	f[3] = uint32(0x11002000 + (rotr(f[1], 17) ^ rotr(f[1], 19) ^ (f[1] >> 10)))
-	f[4] = uint32(0x00000280 + (rotr(f[0], 7) ^ rotr(f[0], 18) ^ (f[0] >> 3)))
-	f[5] = uint32(f[0] + (rotr(f[1], 7) ^ rotr(f[1], 18) ^ (f[1] >> 3)))
-	f[6] = uint32(state[4] + (rotr(state2[1], 6) ^ rotr(state2[1], 11) ^ rotr(state2[1], 25)) + (state2[3] ^ (state2[1] & (state2[2] ^ state2[3]))) + 0xe9b5dba5)
-	f[7] = uint32((rotr(state2[5], 2) ^ rotr(state2[5], 13) ^ rotr(state2[5], 22)) + ((state2[5] & state2[6]) | (state2[7] & (state2[5] | state2[6]))))
+	#f[0] = uint32(data[0] + (rotr(data[1], 7) ^ rotr(data[1], 18) ^ (data[1] >> 3)))
+	#f[1] = uint32(data[1] + (rotr(data[2], 7) ^ rotr(data[2], 18) ^ (data[2] >> 3)) + 0x01100000)
+	#f[2] = uint32(data[2] + (rotr(f[0], 17) ^ rotr(f[0], 19) ^ (f[0] >> 10)))
+	#f[3] = uint32(0x11002000 + (rotr(f[1], 17) ^ rotr(f[1], 19) ^ (f[1] >> 10)))
+	#f[4] = uint32(0x00000280 + (rotr(f[0], 7) ^ rotr(f[0], 18) ^ (f[0] >> 3)))
+	#f[5] = uint32(f[0] + (rotr(f[1], 7) ^ rotr(f[1], 18) ^ (f[1] >> 3)))
+	#f[6] = uint32(state[4] + (rotr(state2[1], 6) ^ rotr(state2[1], 11) ^ rotr(state2[1], 25)) + (state2[3] ^ (state2[1] & (state2[2] ^ state2[3]))) + 0xe9b5dba5)
+	#f[7] = uint32((rotr(state2[5], 2) ^ rotr(state2[5], 13) ^ rotr(state2[5], 22)) + ((state2[5] & state2[6]) | (state2[7] & (state2[5] | state2[6]))))
 
 	return state2
 
@@ -82,6 +82,44 @@ def calculateF(state, merkle_end, time, difficulty, f, state2):
 			state2[3]))) + 0xe9b5dba5)
 
 	state2[3] = np.uint32(state2[3] + 0xb956c25b)
+
+# For phatk2
+def calculateF2(state, merkle_end, time, difficulty, f, state2):
+	data = [merkle_end, time, difficulty]
+        rot = lambda x,y: x>>y | x<<(32-y)
+
+        #W2
+        f[0] = np.uint32(data[2])
+
+        #W16
+        W16 = np.uint32(data[0] + (rot(data[1], 7) ^ rot(data[1], 18) ^
+            (data[1] >> 3)))
+        f[1] = W16
+        #W17
+        W17 = np.uint32(data[1] + (rot(data[2], 7) ^ rot(data[2], 18) ^
+            (data[2] >> 3)) + 0x01100000)
+        f[2] = W17
+
+        #2 parts of the first SHA round
+        PreVal4 = (state[4] + (rot(state2[1], 6) ^
+            rot(state2[1], 11) ^ rot(state2[1], 25)) +
+            (state2[3] ^ (state2[1] & (state2[2] ^
+            state2[3]))) + 0xe9b5dba5)
+        T1 = ((rot(state2[5], 2) ^
+            rot(state2[5], 13) ^ rot(state2[5], 22)) +
+            ((state2[5] & state2[6]) | (state2[7] &
+            (state2[5] | state2[6]))))
+        f[3] = np.uint32(( PreVal4 + T1))
+        f[4] = np.uint32( PreVal4 + state[0])
+        f[5] = np.uint32(0x00000280 + ((rot(W16, 7) ^
+            rot(W16, 18) ^ (W16 >> 3))))
+        f[6] = np.uint32(f[1] + ((rot(W17, 7) ^
+            rot(W17, 18) ^ (W17 >> 3))))
+
+        f[7] = np.uint32(0x11002000 + (rot(W17, 17) ^ rot(W17, 19) ^
+            (W17 >> 10)))
+        f[8] = np.uint32(data[2] + (rot(W16, 17) ^ rot(W16, 19) ^
+            (W16 >> 10)))
 
 
 def sha256(state, data):
