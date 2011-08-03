@@ -16,7 +16,19 @@ class BitcoinMiner():
 		self.output_size = 0x100
 		self.options = options
 		self.version = version
-		(self.defines, self.rate_divisor, self.hashspace) = if_else(self.options.vectors, ('-DVECTORS', 500, 0x7FFFFFFF), ('', 1000, 0xFFFFFFFF))
+
+		if self.options.vectors4 and not self.options.phatk2_1:
+			say_line('Warning: Vectors4 requires phatk2.1. Using phatk2.1 instead.')
+			self.options.phatk2_1 = True
+			self.options.phatk2 = False
+
+		if self.options.vectors4:
+			(self.defines, self.rate_divisor, self.hashspace) = ('-DVECTORS4', 250, 0x3FFFFFFF)
+		elif self.options.vectors:
+			(self.defines, self.rate_divisor, self.hashspace) = ('-DVECTORS', 500, 0x7FFFFFFF)
+		else:
+			(self.defines, self.rate_divisor, self.hashspace) = ('', 1000, 0xFFFFFFFF)
+
 		self.defines += (' -DOUTPUT_SIZE=' + str(self.output_size))
 		self.defines += (' -DOUTPUT_MASK=' + str(self.output_size - 1))
 
@@ -30,7 +42,7 @@ class BitcoinMiner():
 		self.update_time = False
 		self.share_count = [0, 0]
 		self.work_queue = Queue()
-		self.transport = transport(self, self.options.phatk2)
+		self.transport = transport(self, self.options.phatk2 or self.options.phatk2_1)
 		log.verbose = self.options.verbose
 		log.quiet = self.options.quiet
 
@@ -89,18 +101,25 @@ class BitcoinMiner():
 					state2 = work.state2
 					f = work.f
 
-			if self.options.phatk2:
+			if self.options.vectors4:
+				packed_base = pack('=IIII', base, (base + 1), (base + 2), (base + 3))
+			elif self.options.vectors and (self.options.phatk2 or self.options.phatk2_1):
+				packed_base = pack('=II', base, (base + 1))
+			else:
+				packed_base = pack('=I', base)
+
+			if self.options.phatk2 or self.options.phatk2_1:
 				self.miner.search(queue, (global_threads,), (self.options.worksize,),
 						state[0], state[1], state[2], state[3], state[4], state[5], state[6], state[7],
 						state2[1], state2[2], state2[3], state2[5], state2[6], state2[7],
-						pack('II', base, (base + 1)),
+						packed_base,
 						f[1], f[2], f[3], f[4], f[5], f[6], f[7], f[8],
 						output_buffer)
 			else:
 				self.miner.search(queue, (global_threads,), (self.options.worksize,),
 						state[0], state[1], state[2], state[3], state[4], state[5], state[6], state[7],
 						state2[1], state2[2], np.uint32(state2[2] + 0x59f111f1), state2[3], state2[5], state2[6], state2[7],
-						pack('I', base),
+						packed_base,
 						f[0], f[1], f[2], f[5],
 						(f[3] + f[4]), (state[0] - f[4]),
 						output_buffer)
@@ -110,8 +129,10 @@ class BitcoinMiner():
 			threads_run_pace += global_threads
 			threads_run += global_threads
 
-			if self.options.phatk2:
-				if self.options.vectors:
+			if self.options.phatk2 or self.options.phatk2_1:
+				if self.options.vectors4:
+					base = uint32(base + global_threads * 4)
+				elif self.options.vectors:
 					base = uint32(base + global_threads * 2)
 				else:
 					base = uint32(base + global_threads)
@@ -131,15 +152,21 @@ class BitcoinMiner():
 			if (t > self.options.rate):
 				rate = int((threads_run / t) / self.rate_divisor)
 
-				if accept_hist:
-					LAH = accept_hist.pop()
-					if LAH[1] != self.share_count[1]:
-						accept_hist.append(LAH)
-				accept_hist.append((now, self.share_count[1]))
-				while (accept_hist[0][0] < now - self.options.estimate):
-					accept_hist.pop(0)
-				new_accept = self.share_count[1] - accept_hist[0][1]
-				estimated_rate = Decimal(new_accept) * (work.targetQ) / min(int(now - start_time), self.options.estimate) / 1000
+				# Provide an estimate over the course of the entire program run-time
+				# Includes all shares (accepted and rejected)
+				if self.options.estimate == -1:
+					total_shares = self.share_count[1] + self.share_count[0]
+					estimated_rate = Decimal(total_shares) * (work.targetQ) / int(now - start_time) / 1000
+				else:
+					if accept_hist:
+						LAH = accept_hist.pop()
+						if LAH[1] != self.share_count[1]:
+							accept_hist.append(LAH)
+					accept_hist.append((now, self.share_count[1]))
+					while (accept_hist[0][0] < now - self.options.estimate):
+						accept_hist.pop(0)
+					new_accept = self.share_count[1] - accept_hist[0][1]
+					estimated_rate = Decimal(new_accept) * (work.targetQ) / min(int(now - start_time), self.options.estimate) / 1000
 
 				self.say_status(rate, estimated_rate)
 				last_rated = now; threads_run = 0
@@ -178,14 +205,19 @@ class BitcoinMiner():
 			self.defines += ' -DBITALIGN'
 			self.defines += ' -DBFI_INT'
 
-		if self.options.phatk2:
+		if self.options.phatk2_1:
+			self.defines += ' -DWORKSIZE=' + str(self.options.worksize)
+			say_line('Kernel: phatk2.1')
+		elif self.options.phatk2:
 			self.defines += ' -DWORKSIZE=' + str(self.options.worksize)
 			say_line('Kernel: phatk2')
 		else:
 			say_line('Kernel: phatk')
 
 		kernel_file = None
-		if self.options.phatk2:
+		if self.options.phatk2_1:
+			kernel_file = open('phatk2_1.cl', 'r')
+		elif self.options.phatk2:
 			kernel_file = open('phatk2.cl', 'r')
 		else:
 			kernel_file = open('phatk.cl', 'r')
