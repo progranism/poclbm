@@ -50,7 +50,7 @@ class BitcoinMiner():
 		self.update_time = False
 		self.share_count = [0, 0]
 		self.work_queue = Queue()
-		self.transport = transport(self, self.options.phatk2 or self.options.phatk2_1)
+		self.transport = transport(self, self.options.phatk2 or self.options.phatk2_1 or self.options.phatk2_2)
 		log.verbose = self.options.verbose
 		log.quiet = self.options.quiet
 
