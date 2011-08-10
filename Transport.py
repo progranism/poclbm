@@ -47,6 +47,10 @@ class Transport(object):
 		else:
 			self.set_server(self.servers[0])
 			self.user_servers = list(self.servers)
+	
+	def failure(self, msg):
+		say_line(msg)
+		exit()
 
 	def loop(self):
 		raise NotImplementedError

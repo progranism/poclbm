@@ -42,6 +42,7 @@ group.add_option('-v', '--vectors',  dest='vectors',    action='store_true', hel
 group.add_option(      '--vectors4', dest='vectors4',   action='store_true', help='use vectors4')
 group.add_option(      '--phatk2',   dest='phatk2',     action='store_true', help='use phatk2 kernel')
 group.add_option(      '--phatk2_1', dest='phatk2_1',   action='store_true', help='use phatk2.1 kernel')
+group.add_option(      '--phatk2_2', dest='phatk2_2',   action='store_true', help='use phatk2.2 kernel')
 parser.add_option_group(group)
 
 (options, options.servers) = parser.parse_args()

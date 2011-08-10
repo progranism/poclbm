@@ -17,10 +17,18 @@ class BitcoinMiner():
 		self.options = options
 		self.version = version
 
-		if self.options.vectors4 and not self.options.phatk2_1:
-			say_line('Warning: Vectors4 requires phatk2.1. Using phatk2.1 instead.')
+		if self.options.vectors4 and not (self.options.phatk2_1 or self.options.phatk2_2):
+			say_line('Warning: Vectors4 requires phatk2.1+. Using phatk2.1 instead.')
 			self.options.phatk2_1 = True
 			self.options.phatk2 = False
+
+		# TODO: Try to find the max size automatically.
+		# The user is supposed to provide a worksize for phatk2+
+		if (self.options.phatk2 or self.options.phatk2_1 or self.options.phatk2_2) and self.options.worksize == -1:
+			self.options.worksize = 128
+
+		if self.options.phatk2_2:
+			self.output_size = self.options.worksize
 
 		if self.options.vectors4:
 			(self.defines, self.rate_divisor, self.hashspace) = ('-DVECTORS4', 250, 0x3FFFFFFF)
@@ -103,12 +111,12 @@ class BitcoinMiner():
 
 			if self.options.vectors4:
 				packed_base = pack('=IIII', base, (base + 1), (base + 2), (base + 3))
-			elif self.options.vectors and (self.options.phatk2 or self.options.phatk2_1):
+			elif self.options.vectors and (self.options.phatk2 or self.options.phatk2_1 or self.options.phatk2_2):
 				packed_base = pack('=II', base, (base + 1))
 			else:
 				packed_base = pack('=I', base)
 
-			if self.options.phatk2 or self.options.phatk2_1:
+			if self.options.phatk2 or self.options.phatk2_1 or self.options.phatk2_2:
 				self.miner.search(queue, (global_threads,), (self.options.worksize,),
 						state[0], state[1], state[2], state[3], state[4], state[5], state[6], state[7],
 						state2[1], state2[2], state2[3], state2[5], state2[6], state2[7],
@@ -129,7 +137,7 @@ class BitcoinMiner():
 			threads_run_pace += global_threads
 			threads_run += global_threads
 
-			if self.options.phatk2 or self.options.phatk2_1:
+			if self.options.phatk2 or self.options.phatk2_1 or self.options.phatk2_2:
 				if self.options.vectors4:
 					base = uint32(base + global_threads * 4)
 				elif self.options.vectors:
@@ -205,7 +213,10 @@ class BitcoinMiner():
 			self.defines += ' -DBITALIGN'
 			self.defines += ' -DBFI_INT'
 
-		if self.options.phatk2_1:
+		if self.options.phatk2_2:
+			self.defines += ' -DWORKSIZE=' + str(self.options.worksize)
+			say_line('Kernel: phatk2.2')
+		elif self.options.phatk2_1:
 			self.defines += ' -DWORKSIZE=' + str(self.options.worksize)
 			say_line('Kernel: phatk2.1')
 		elif self.options.phatk2:
@@ -215,7 +226,9 @@ class BitcoinMiner():
 			say_line('Kernel: phatk')
 
 		kernel_file = None
-		if self.options.phatk2_1:
+		if self.options.phatk2_2:
+			kernel_file = open('phatk2_2.cl', 'r')
+		elif self.options.phatk2_1:
 			kernel_file = open('phatk2_1.cl', 'r')
 		elif self.options.phatk2:
 			kernel_file = open('phatk2.cl', 'r')
